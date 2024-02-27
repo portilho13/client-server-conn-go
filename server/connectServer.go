@@ -5,7 +5,9 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -16,8 +18,8 @@ import (
 
 var (
     count = 0
-	key = []byte("my32digitkey12345678901234567890") // 32 bytes for AES-256
-	iv  = []byte("my16digitIvKey12")                  // 16 bytes for AES
+        key = []byte("my32digitkey12345678901234567890") // 32 bytes for AES-256
+        iv  = []byte("my16digitIvKey12")                  // 16 bytes for AES
 )
 
 func handleConnection(c net.Conn) {
@@ -44,10 +46,10 @@ func handleConnection(c net.Conn) {
 }
 
 func PKCS5UnPadding(src []byte) []byte {
-	length := len(src)
-	unpadding := int(src[length-1])
+        length := len(src)
+        unpadding := int(src[length-1])
 
-	return src[:(length - unpadding)]
+        return src[:(length - unpadding)]
 }
 
 func Decrypt(s string) {
@@ -96,8 +98,34 @@ func main() {
                         fmt.Println(err)
                         return
                 }
+                // Read the size of the public key
+                publicKeySizeBuf := make([]byte, 4)
+                _, err = io.ReadFull(c, publicKeySizeBuf)
+                if err != nil {
+                fmt.Println("Error reading public key size:", err)
+                c.Close()
+                continue
+                }
+
+                publicKeySize := binary.BigEndian.Uint32(publicKeySizeBuf)
+
+                // Read the public key
+                publicKey := make([]byte, publicKeySize)
+                _, err = io.ReadFull(c, publicKey)
+                if err != nil {
+                fmt.Println("Error reading public key:", err)
+                c.Close()
+                continue
+                }
+                fmt.Println("Received public key:", string(publicKey))
+
+                if err != nil {
+                        fmt.Println(err)
+                        return
+                }
                 go handleConnection(c)
                 count++
         }
 }
       
+
