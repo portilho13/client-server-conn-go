@@ -4,8 +4,12 @@ import (
 	"bufio"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"log"
@@ -17,9 +21,9 @@ import (
 
 
 var (
-    count = 0
-        key = []byte("my32digitkey12345678901234567890") // 32 bytes for AES-256
-        iv  = []byte("my16digitIvKey12")                  // 16 bytes for AES
+        count = 0
+        key []byte
+        iv []byte
 )
 
 func handleConnection(c net.Conn) {
@@ -76,6 +80,24 @@ func Decrypt(s string) {
         fmt.Printf("Encrypted Message: %v | Decrypted Message: %v\n", s, decodedMessage)
 }
 
+func GenerateKeyAndIv() ([]byte, []byte) {
+        key := make([]byte, 32) // 32 Bits for AES-256
+        iv := make([]byte, 16) // 16 bits for AES
+
+        _, err := rand.Read(key)
+        if err != nil {
+                log.Fatal("Error creating AES Key")
+                return nil, nil
+        }
+        _, err = rand.Read(iv)
+        if err != nil {
+                log.Fatal("Error creating AES Key")
+                return nil, nil
+        }
+
+        return key, iv
+}
+
 func main() {
         arguments := os.Args
         if len(arguments) == 1 {
@@ -102,27 +124,54 @@ func main() {
                 publicKeySizeBuf := make([]byte, 4)
                 _, err = io.ReadFull(c, publicKeySizeBuf)
                 if err != nil {
-                fmt.Println("Error reading public key size:", err)
-                c.Close()
-                continue
+                        fmt.Println("Error reading public key size:", err)
+                        c.Close()
+                        continue
                 }
 
                 publicKeySize := binary.BigEndian.Uint32(publicKeySizeBuf)
 
                 // Read the public key
-                publicKey := make([]byte, publicKeySize)
-                _, err = io.ReadFull(c, publicKey)
+                publicKeyPEM := make([]byte, publicKeySize)
+                _, err = io.ReadFull(c, publicKeyPEM)
                 if err != nil {
-                fmt.Println("Error reading public key:", err)
-                c.Close()
-                continue
+                        fmt.Println("Error reading public key:", err)
+                        c.Close()
+                        continue
                 }
-                fmt.Println("Received public key:", string(publicKey))
+                fmt.Println("Received public key:", string(publicKeyPEM))
+                
+                block, _ := pem.Decode(publicKeyPEM)
 
+                publicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
                 if err != nil {
-                        fmt.Println(err)
-                        return
+                        log.Fatal(err)
                 }
+
+                rsaPublicKey, ok := publicKey.(*rsa.PublicKey)
+
+                if !ok {
+                        log.Fatal("Not an RSA Key")
+                }
+                key, iv := GenerateKeyAndIv()
+
+                encryptedAESKey, err := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, key)
+                if err != nil {
+                        log.Fatal(err)
+                }
+
+                encryptedAESIv, err := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, iv)
+                if err != nil {
+                        log.Fatal(err)
+                }
+                fmt.Println(key)
+                fmt.Println("------")
+                fmt.Println(encryptedAESKey)
+                fmt.Println("------")
+                fmt.Println(encryptedAESIv)
+
+
+
                 go handleConnection(c)
                 count++
         }
