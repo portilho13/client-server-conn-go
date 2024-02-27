@@ -12,6 +12,7 @@ import (
 	"encoding/binary"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -81,7 +82,7 @@ func main() {
     CONNECT := arguments[1]
     c, err := net.Dial("tcp", CONNECT)
     if err != nil {
-        log.Fatal("Keys have no value")
+        log.Fatal("Error connectiong")
         return
     }
 
@@ -107,6 +108,31 @@ func main() {
     if err != nil {
         log.Fatal("Error sending public key:", err)
     }
+
+	keySizeBuff := make([]byte, 4)
+	_, err = io.ReadFull(c, keySizeBuff)
+	if err != nil {
+		log.Println(err)
+	}
+
+	keySize := binary.BigEndian.Uint32(keySizeBuff)
+	encryptedKey := make([]byte, keySize)
+	_, err = io.ReadFull(c, encryptedKey)
+	fmt.Println(encryptedKey)
+
+	ivSizeBuff := make([]byte, 4)
+	_, err = io.ReadFull(c, ivSizeBuff)
+	if err != nil {
+		log.Println(err)
+	}
+
+	ivSize := binary.BigEndian.Uint32(ivSizeBuff)
+	encryptedIv := make([]byte, ivSize)
+	_, err = io.ReadFull(c, encryptedIv)
+	fmt.Println(encryptedIv)
+
+	
+
 
     if err != nil {
         fmt.Println(err)

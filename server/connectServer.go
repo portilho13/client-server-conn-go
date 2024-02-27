@@ -164,11 +164,38 @@ func main() {
                 if err != nil {
                         log.Fatal(err)
                 }
-                fmt.Println(key)
                 fmt.Println("------")
                 fmt.Println(encryptedAESKey)
                 fmt.Println("------")
                 fmt.Println(encryptedAESIv)
+
+                encryptedAESKeySize := make([]byte, 4)
+                encryptedAESIvSize := make([]byte, 4)
+
+                binary.BigEndian.PutUint32(encryptedAESKeySize, uint32(len(encryptedAESKey)))
+                binary.BigEndian.PutUint32(encryptedAESIvSize, uint32(len(encryptedAESIv)))
+
+                _, err = c.Write(encryptedAESKeySize)
+                if err != nil {
+                        log.Fatal(err)
+                }
+
+                _, err = c.Write(encryptedAESKey)
+                if err != nil {
+                        log.Fatal(err)
+                }
+
+                _, err = c.Write(encryptedAESIvSize)
+                if err != nil {
+                        log.Fatal(err)
+                }
+
+                _, err = c.Write(encryptedAESIv)
+                if err != nil {
+                        log.Fatal(err)
+                }
+                
+
 
 
 
