@@ -11,7 +11,7 @@ go run connectServer.go {PORT}
 
 # Client
 
-cd ./server
+cd ./client
 go run connectClient.go {IP}:{PORT}
 
 ```
