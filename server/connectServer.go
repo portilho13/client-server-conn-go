@@ -1,3 +1,5 @@
+/*Made by Mario Portilho*/
+
 package main
 
 import (
@@ -19,189 +21,201 @@ import (
 	"strings"
 )
 
-
 var (
-        count = 0
-        key []byte
-        iv []byte
+	count = 0
+	key   []byte // 32 bytes for AES-256
+	iv    []byte // 16 bytes for AES
 )
 
 func handleConnection(c net.Conn) {
-        fmt.Println("Connection Found")
-        for {
-                netData, err := bufio.NewReader(c).ReadString('\n')
-                if err != nil {
-                        fmt.Println(err)
-                        return
-                }
+	fmt.Println("Connection Found")
+	for {
+		netData, err := bufio.NewReader(c).ReadString('\n')
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 
-                temp := strings.TrimSpace(string(netData))
-                if temp == "STOP" {
-                        break
-                }
-                Decrypt(temp)
+		temp := strings.TrimSpace(string(netData))
+		if temp == "STOP" {
+			break
+		}
 
-                // Return number of connected devices to client
-                counter := strconv.Itoa(count) + "\n"
+		// Decrypt the message
+		decryptedMessage, err := Decrypt(temp)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		fmt.Printf("Encrypted Message: %v | Decrypted Message: %v\n", temp, decryptedMessage)
 
-                c.Write([]byte(string(counter)))
-        }
-        c.Close()
+		// Return number of connected devices to client
+		counter := strconv.Itoa(count) + "\n"
+
+		c.Write([]byte(string(counter)))
+	}
+	c.Close()
 }
 
 func PKCS5UnPadding(src []byte) []byte {
-        length := len(src)
-        unpadding := int(src[length-1])
+	length := len(src)
+	unpadding := int(src[length-1])
 
-        return src[:(length - unpadding)]
+	return src[:(length - unpadding)]
 }
 
-func Decrypt(s string) {
+func Decrypt(s string) (string, error) {
 
-        // Decode from base64
-        cipherText, err := base64.StdEncoding.DecodeString(s)
-        if err != nil {
-                log.Fatal("Error decoding string")
-        }
-        
-        //Create AES block to decrypt
+	// Decode from base64
+	cipherText, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		log.Fatal("Error decoding string")
+	}
 
-        block, err := aes.NewCipher(key)
-        if err != nil {
-                log.Fatal("Error creating block cipher")
-        }
-        
-        // Apply Block and remove padding
+	//Create AES block to decrypt
 
-        mode := cipher.NewCBCDecrypter(block, iv)
-        mode.CryptBlocks(cipherText, cipherText)
-        cipherText = PKCS5UnPadding(cipherText)
-        decodedMessage := string(cipherText[:])
-        fmt.Printf("Encrypted Message: %v | Decrypted Message: %v\n", s, decodedMessage)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+
+	// Apply Block and remove padding
+
+	mode := cipher.NewCBCDecrypter(block, iv)
+	mode.CryptBlocks(cipherText, cipherText)
+
+	cipherText = PKCS5UnPadding(cipherText)
+	decodedMessage := string(cipherText[:])
+
+	return decodedMessage, nil
 }
 
 func GenerateKeyAndIv() ([]byte, []byte) {
-        key := make([]byte, 32) // 32 Bits for AES-256
-        iv := make([]byte, 16) // 16 bits for AES
+	key := make([]byte, 32) // 32 Bits for AES-256
+	iv := make([]byte, 16)  // 16 bits for AES
 
-        _, err := rand.Read(key)
-        if err != nil {
-                log.Fatal("Error creating AES Key")
-                return nil, nil
-        }
-        _, err = rand.Read(iv)
-        if err != nil {
-                log.Fatal("Error creating AES Key")
-                return nil, nil
-        }
+	// Generate random key and iv
 
-        return key, iv
+	_, err := rand.Read(key)
+	if err != nil {
+		log.Fatal("Error creating AES Key")
+		return nil, nil
+	}
+	_, err = rand.Read(iv)
+	if err != nil {
+		log.Fatal("Error creating AES Key")
+		return nil, nil
+	}
+
+	return key, iv
 }
 
 func main() {
-        arguments := os.Args
-        if len(arguments) == 1 {
-                fmt.Println("Please provide a port number!")
-                return
-        }
+	arguments := os.Args
+	if len(arguments) == 1 {
+		fmt.Println("Please provide a port number!")
+		return
+	}
 
-        PORT := ":" + arguments[1]
-        l, err := net.Listen("tcp4", PORT)
-        if err != nil {
-                fmt.Println(err)
-                return
-        }
-        defer l.Close()
+	PORT := ":" + arguments[1]
+	l, err := net.Listen("tcp4", PORT)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer l.Close()
 
-        for {
-                // Accept all incoming connections
-                c, err := l.Accept()
-                if err != nil {
-                        fmt.Println(err)
-                        return
-                }
-                // Read the size of the public key
-                publicKeySizeBuf := make([]byte, 4)
-                _, err = io.ReadFull(c, publicKeySizeBuf)
-                if err != nil {
-                        fmt.Println("Error reading public key size:", err)
-                        c.Close()
-                        continue
-                }
+	for {
+		// Accept all incoming connections
 
-                publicKeySize := binary.BigEndian.Uint32(publicKeySizeBuf)
+		c, err := l.Accept()
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		// Read the size of the public key
 
-                // Read the public key
-                publicKeyPEM := make([]byte, publicKeySize)
-                _, err = io.ReadFull(c, publicKeyPEM)
-                if err != nil {
-                        fmt.Println("Error reading public key:", err)
-                        c.Close()
-                        continue
-                }
-                fmt.Println("Received public key:", string(publicKeyPEM))
-                
-                block, _ := pem.Decode(publicKeyPEM)
+		publicKeySizeBuf := make([]byte, 4)
+		_, err = io.ReadFull(c, publicKeySizeBuf)
+		if err != nil {
+			fmt.Println("Error reading public key size:", err)
+			c.Close()
+			continue
+		}
 
-                publicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
-                if err != nil {
-                        log.Fatal(err)
-                }
+		publicKeySize := binary.BigEndian.Uint32(publicKeySizeBuf)
 
-                rsaPublicKey, ok := publicKey.(*rsa.PublicKey)
+		// Read the public key
 
-                if !ok {
-                        log.Fatal("Not an RSA Key")
-                }
-                key, iv := GenerateKeyAndIv()
+		publicKeyPEM := make([]byte, publicKeySize)
+		_, err = io.ReadFull(c, publicKeyPEM)
+		if err != nil {
+			fmt.Println("Error reading public key:", err)
+			c.Close()
+			continue
+		}
 
-                encryptedAESKey, err := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, key)
-                if err != nil {
-                        log.Fatal(err)
-                }
+		// Decode the public key
 
-                encryptedAESIv, err := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, iv)
-                if err != nil {
-                        log.Fatal(err)
-                }
-                fmt.Println("------")
-                fmt.Println(encryptedAESKey)
-                fmt.Println("------")
-                fmt.Println(encryptedAESIv)
+		block, _ := pem.Decode(publicKeyPEM)
 
-                encryptedAESKeySize := make([]byte, 4)
-                encryptedAESIvSize := make([]byte, 4)
+		publicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-                binary.BigEndian.PutUint32(encryptedAESKeySize, uint32(len(encryptedAESKey)))
-                binary.BigEndian.PutUint32(encryptedAESIvSize, uint32(len(encryptedAESIv)))
+		// Check if the public key is an RSA key
 
-                _, err = c.Write(encryptedAESKeySize)
-                if err != nil {
-                        log.Fatal(err)
-                }
+		rsaPublicKey, ok := publicKey.(*rsa.PublicKey)
 
-                _, err = c.Write(encryptedAESKey)
-                if err != nil {
-                        log.Fatal(err)
-                }
+		if !ok {
+			log.Fatal("Not an RSA Key")
+		}
+		key, iv = GenerateKeyAndIv()
 
-                _, err = c.Write(encryptedAESIvSize)
-                if err != nil {
-                        log.Fatal(err)
-                }
+		// Encrypt the AES key and IV with the RSA public key
 
-                _, err = c.Write(encryptedAESIv)
-                if err != nil {
-                        log.Fatal(err)
-                }
-                
+		encryptedAESKey, err := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, key)
+		if err != nil {
+			log.Fatal(err)
+		}
 
+		encryptedAESIv, err := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, iv)
+		if err != nil {
+			log.Fatal(err)
+		}
 
+		// Get the size of the encrypted AES key
 
+		encryptedAESKeySize := make([]byte, 4)
+		encryptedAESIvSize := make([]byte, 4)
 
-                go handleConnection(c)
-                count++
-        }
+		binary.BigEndian.PutUint32(encryptedAESKeySize, uint32(len(encryptedAESKey)))
+		binary.BigEndian.PutUint32(encryptedAESIvSize, uint32(len(encryptedAESIv)))
+
+		// Send the size of the encrypted AES key followed by the encrypted AES key data
+
+		_, err = c.Write(encryptedAESKeySize)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		_, err = c.Write(encryptedAESKey)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		_, err = c.Write(encryptedAESIvSize)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		_, err = c.Write(encryptedAESIv)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		go handleConnection(c)
+		count++
+	}
 }
-      
-
